@@ -1,0 +1,97 @@
+---
+title: "Project Assignment"
+author: "Raheel Khan"
+date: "2025-06-28"
+output: html_document
+---
+
+## Load packages
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret, quietly = T, warn.conflicts = F)
+library(randomForest, quietly = T, warn.conflicts = F)
+library(dplyr, quietly = T, warn.conflicts = F)
+```
+
+
+## Reading and cleaning the data files
+```{r}
+#reading and cleaning
+data <- read.csv("pml-training.csv", na.strings = c("", "NA", "#DIV/0!"))
+data$classe <- as.factor(data$classe)  # Convert classe to factor type
+
+test_data <- read.csv("pml-testing.csv", na.strings = c("", "NA", "#DIV/0!"))
+
+# Remove columns with mostly NAs ( > 90% missing)
+na_ratio <- colMeans(is.na(data))
+data_clean <- data[, na_ratio < 0.90] 
+
+names(data_clean)
+
+# Removing columns not useful for prediction
+data_clean <- data_clean %>% 
+  select(-c(X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window))
+
+
+```
+
+## Splitting into training and validation set, also standardizing/preprocessing
+
+```{r}
+# Split into training and validation sets
+set.seed(123)
+trainIndex <- createDataPartition(data_clean$classe, p = 0.7, list = FALSE)
+training <- data_clean[trainIndex, ]
+validation <- data_clean[-trainIndex, ]
+
+# Preprocess: center and scale numeric variables
+preProc <- preProcess(training[, -ncol(training)], method = c("center", "scale"))
+training_preprocessed <- predict(preProc, training)
+validation_preprocessed <- predict(preProc, validation)
+```
+
+## Training with Random Forrest with cross validation
+I tried training entire training dataset with five folds cross validation but it was taking a lot of time. So, attempted a sample of 7000 and also the entire dataset with two folds cross validation. The results were almost the same.
+
+
+```{r}
+
+# Uncomment the below to train random forest again
+# model_rf <- train(classe ~ ., 
+#                   data = training_preprocessed, #%>% slice_sample(n = 7000), #training takes forever. :D reduced n to 7000
+#                   method = "rf",
+#                   trControl = trainControl(method = "cv", number = 2, verboseIter = T),
+#                   #ntree = 100,
+#                   importance = TRUE)
+
+#saveRDS(model_rf, file = 'model_rf_all_n.rds')
+#saveRDS(model_rf, file = 'model_rf_7000_n.rds')
+
+model_rf <- readRDS('model_rf_all_n.rds') #comment this out. 
+
+```
+
+## Evaluating the model
+```{r}
+# Evaluate on validation set
+pred_rf <- predict(model_rf, newdata = validation_preprocessed)
+conf_mat <- confusionMatrix(pred_rf, validation_preprocessed$classe)
+
+conf_mat
+
+cat("Random Forest Model Accuracy:", round(conf_mat$overall['Accuracy'], 4), "\n")
+
+```
+
+## Prediction on the test set
+
+```{r}
+dim(test_data)
+dim(data_clean) #training
+
+test_data_clean <- test_data[, names(data_clean)[-ncol(data_clean)]]  # Match training columns
+test_data_preprocessed <- predict(preProc, test_data_clean)
+
+final_predictions <- predict(model_rf, newdata = test_data_preprocessed)
+cat("\nPredictions for test cases:\n", as.character(final_predictions))
+```
